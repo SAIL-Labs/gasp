@@ -22,13 +22,12 @@ has been implemented.
 - astropy
 - h5py
 - hcipy
-- xaosim (F. Martinache's package for xAO)
+- scipy
 
 ## Update 2022-03-29
 The GLINT instrument with directional coupler, 4T mask and C-Red2 has been implemented and ready to use.
 
 ## Next step
-1. Cleaning the code and reducing the package dependency
-2. Implementing a saving system of the data as for real observation data
-3. Implementing the tricoupler
-4. Implementing the fringe tracking capability
+1. Implementing a saving system of the data as for real observation data
+2. Implementing the tricoupler
+3. Implementing the fringe tracking capability
