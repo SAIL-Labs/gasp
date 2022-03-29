@@ -680,7 +680,7 @@ def uniform_disk(ysz, xsz, radius, rebin, between_pix=False, norm=False):
     return(res)
 
 
-def calculate_injection(phs_screen, wl, geo_inj=0.8):
+def calculate_injection_marechal(phs_screen, wl, geo_inj=0.8):
     """
     Calculate the injection with the Marechal approximation.
 
@@ -722,12 +722,7 @@ def make_N_hole_mask(csz, holepositions, holeradius, norm):
     return array, maskarray
 
 
-def create_aperture_mask(pup_tel, pupil_diam, nrings, ring_rad, aper_rad, rot, holes_idx=[36, 3, 33, 22], norm=False, view_pupil=False):
-    # scex = xs.instrument("scexao", csz=csz)
-    # pupil = scex.cam.pupil
-    # pupil_diam = scex.cam.pdiam
-    # pscale = pupil_diam / csz
-    
+def create_aperture_mask(pup_tel, pupil_diam, nrings, ring_rad, aper_rad, rot, holes_idx=[36, 3, 33, 22], norm=False, view_pupil=False):   
     pupil = pup_tel
     csz = len(pupil)
     pscale = pupil_diam / csz
@@ -753,6 +748,21 @@ def create_aperture_mask(pup_tel, pupil_diam, nrings, ring_rad, aper_rad, rot, h
     return pupil * glint_mask, maskarray
 
 def make_scexao_pupil(path, rot_angle, flip_ud, plotting=False):
+    """
+    Load a FITS file of the SCEXAO aperture and adapt it to the simulation.
+    
+    :param path: path to the FITS file of the scexao aperture
+    :type path: str
+    :param rot_angle: rotation angle in degree
+    :type rot_angle: float
+    :param flip_ud: flip the pupil model upside-down
+    :type flip_ud: bool
+    :param plotting: plot the pupil to check if it behaves accordingly, defaults to False
+    :type plotting: bool, optional
+    :return: scexao pupil
+    :rtype: array
+
+    """
     raw_pupil = fits.getdata(path)
     if flip_ud:
         raw_pupil = np.flipud(raw_pupil)
@@ -771,6 +781,17 @@ def make_scexao_pupil(path, rot_angle, flip_ud, plotting=False):
     return subaru_pup
     
 def make_scexao_aperture(normalized=False, with_spiders=True):
+    """
+    Build the scexao aperture. Unlike a FITS file, it is much easier to scale and rotate.
+    
+    :param normalized: normalise all dinensions by the diameter of the pupil, defaults to False
+    :type normalized: bool, optional
+    :param with_spiders: create the spiders, defaults to True
+    :type with_spiders: bool, optional
+    :return: return the scexao pupil
+    :rtype: hcipy pupil-type object
+
+    """
     pupil_diameter = 8.2 * 0.95 # In meters
     spider_width1 = 0.20 # In meters
     spider_width2 = 0.1 # In meters
@@ -826,8 +847,306 @@ def make_scexao_aperture(normalized=False, with_spiders=True):
                 satellite2(grid)
                 
     return func
-    
 
+def hex_grid_coords(nr, radius, rot):
+    """
+    Credit: XAOSIM package (F. Martinache)
+    
+    Returns a 2D array of real x,y coordinates for a regular
+    hexagonal grid that fits within a hexagon.    
+    
+    :param nr: number of rings
+    :type nr: integer
+    :param radius: the radius of a ring
+    :type radius: float
+    :param rot: rotation angle of the hex grid, in degrees
+    :type rot: float
+    :return: coordinates of the regular hexagonal grid.
+    :rtype: 2D-array
+
+    """
+    rotd = rot * np.pi / 180
+    RR = np.array([[np.cos(rotd), -np.sin(rotd)],
+                   [np.sin(rotd),  np.cos(rotd)]])
+
+    ij0 = np.linspace(-nr, nr, 2*nr+1)
+    ii, jj = np.meshgrid(ij0, ij0)
+    xx = radius * (ii + 0.5 * jj)
+    yy = radius * jj * np.sqrt(3)/2
+    cond = np.abs(ii + jj) <= nr
+    return RR.dot(np.array((xx[cond], yy[cond])))
+
+def make_mask_aperture(pupil_grid, segments, num_rings, hex_rad, rot, subpup_diam):
+    """
+    Create an aperture mask to put on GLINT's segmented mirror.
+
+    :param pupil_grid: grid on which the mask is created
+    :type pupil_grid: hcipy-pupil object
+    :param segments: Segments of the segmented mirror to keep through the mask
+    :type segments: list-like
+    :param num_rings: number of rings on the segmented mirror
+    :type num_rings: int
+    :param hex_rad: radius of the hexagonal segment
+        (center-to-flat+gap between segments), in same unit as ``pupil_grid''
+    :type hex_rad: float
+    :param rot: rotation angle of the hex grid, in degrees
+    :type rot: float
+    :param subpup_diam: diameter of the sub-aperture, in same unit as ``pupil_grid''
+    :type subpup_diam: float
+    :return: aperture mask, single apertures for injection calculation purposes\
+        and coordinates of the apertures on the MEMS
+    :rtype: tuple
+
+    """
+    mems_seg_array = hex_grid_coords(num_rings, hex_rad, rot=rot).T
+    mems_seg_array = mems_seg_array[segments]
+    
+    sub_aper = []
+    for i in range(len(segments)):
+        mask = hp.aperture.circular_aperture(subpup_diam, mems_seg_array[i])(pupil_grid)
+        mask = np.array(mask, dtype=bool)
+        sub_aper.append(mask)
+        try:
+            mask_aper = mask_aper + mask
+        except NameError:
+            mask_aper = mask
+    
+    return mask_aper, sub_aper, mems_seg_array
+
+def project_tel_pup_on_glint(pup_tel, psz):
+    """
+    The Subaru pupil is rotated wrt to GLINT and is reflected once.
+    
+    :param pup_tel: pupil of the telescope to project
+    :type pup_tel: hcipy Field object or array
+    :param psz: size of the unflatten pupil
+    :type psz: int
+    :return: projected telescope pupil
+    :rtype: 2D-array
+
+    """
+    pup_tel = np.array(pup_tel, dtype=float)
+    pup_tel = np.reshape(pup_tel, (psz, psz))
+    pup_tel = np.flipud(pup_tel)
+    
+    return pup_tel
+    
+def twoD_Gaussian(coords, xo, yo, sigma_x, sigma_y, theta):
+    """
+    Create a 2D gaussian.
+
+    :param coords: (x, y) coordinates of the grid
+    :type coords: tuple-like
+    :param xo: x coordinate of the location of the Gaussian
+    :type xo: float
+    :param yo: y coordinate of the location of the Gaussian
+    :type yo: float
+    :param sigma_x: Scale factor of the Gaussian along the x axis
+    :type sigma_x: float
+    :param sigma_y: Scale factor of the Gaussian along the y axis
+    :type sigma_y: float
+    :param theta: Orientation of the Gaussian, in radian
+    :type theta: float
+    :return: 2D gaussian profile in a flattened array
+    :rtype: array
+
+    """
+    xx, yy = np.meshgrid(*coords)
+    a = (np.cos(theta)**2)/(2*sigma_x**2) + (np.sin(theta)**2)/(2*sigma_y**2)
+    b = -(np.sin(2*theta))/(4*sigma_x**2) + (np.sin(2*theta))/(4*sigma_y**2)
+    c = (np.sin(theta)**2)/(2*sigma_x**2) + (np.cos(theta)**2)/(2*sigma_y**2)
+    return np.ravel(np.exp( - (a*((xx-xo)**2) + 2*b*(xx-xo)*(yy-yo) + c*((yy-yo)**2))))
+
+def create_mode_field(x_coord, y_coord, x0, y0, mfd_x, mfd_y, theta):
+    """
+    Create the complex electric mode field of the waveguide given the waist.
+    The waist is the mode field radius i.e the distance of 2sigma from the top
+    of the Gaussian to get a drop of amplitude to exp(-2).
+    
+    :param x_coord: x coordinates of the grid
+    :type x_coord: 1D array
+    :param y_coord: y coordinates of the grid
+    :type y_coord: 1D array
+    :param x0: x coordinate of the location of the Gaussian
+    :type x0: float
+    :param y0: y coordinate of the location of the Gaussian
+    :type y0: float
+    :param mfd_x: waist (i.e mode field diameter at 4sigma) of the mode field along the x axis, in the same unit as x_coord
+    :type mfd_x: float
+    :param mfd_y: waist (i.e mode field diameter at 4sigma) of the mode field along the y axis, in the same unit as x_coord
+    :type mfd_y: float
+    :param theta: Orientation of the Gaussian, in radian
+    :type theta: float
+    :return: complex mode field of the waveguide in a flattened array
+    :rtype: 1D array
+
+    """
+    coords = (x_coord, y_coord)
+    mode_field = twoD_Gaussian(coords, x0, y0, mfd_x/4, mfd_y/4, theta)
+    mode_field = mode_field**0.5
+    return mode_field.astype(complex)
+
+def calculate_injection(wavefront_field, mode_field):
+    """
+    Give the injection rate of light in the waveguide.
+    If arrays have more than 1D, the calculation is performed
+    on the last axis.
+
+    :param wavefront_field: complex field of the wavefront
+    :type wavefront_field: complex array
+    :param mode_field: complex field of the fundamental mode of the waveguide
+    :type mode_field: complex array
+    :return: injection rate of the light
+    :rtype: float
+
+    """
+    # The operation is a scalar product normalised by the squared norm of the arrays
+    overlap = np.sum(wavefront_field * np.conj(mode_field), axis=-1) / \
+        np.sqrt(np.sum(np.abs(wavefront_field)**2, axis=-1) * np.sum(np.abs(mode_field)**2, axis=-1))
+        
+    return abs(overlap)**2
+
+def calculate_injected_phase(wavefront_field, mode_field):
+    """
+    Give the phase of the injected wavefront.
+    
+    Only because the fundamental mode of the waveguide is real and not complex,
+    the injected phase is the phase of the scalar product.
+    For the same reason, it is also the arctan of ratio of the weighted mean
+    of the imaginary part over the weighted mean of the real part.
+    
+    Phase wrapping may break the assumption above.
+
+    :param wavefront_field: complex field of the wavefront
+    :type wavefront_field: complex array
+    :param mode_field: complex field of the fundamental mode of the waveguide
+    :type mode_field: complex array
+    :return: phase of the guided wavefront, in radian
+    :rtype: float
+
+    """
+    phase = np.sum(wavefront_field * np.conj(mode_field), axis=-1)
+    return np.angle(phase)
+
+def calculate_injection_and_phase(wavefront_field, mode_field):
+    """
+    Give the injection rate and the phase of the light in the waveguide.
+    If arrays have more than 1D, the calculation is performed
+    on the last axis.
+    
+    The injection rate is the scalar product of the wavefront by
+    the mode field normalised by their norms.
+    
+    The phase is the complex argument of the scalar product.
+    
+    :param wavefront_field: complex field of the wavefront
+    :type wavefront_field: complex array
+    :param mode_field: complex field of the fundamental mode of the waveguide
+    :type mode_field: complex array
+    :return: injection and phase of the guided wavefront (in radian)
+    :rtype: tuple
+
+    """
+    projection = np.sum(wavefront_field * np.conj(mode_field), axis=-1)
+    overlap = projection / \
+        np.sqrt(np.sum(np.abs(wavefront_field)**2, axis=-1) * np.sum(np.abs(mode_field)**2, axis=-1))
+        
+    return abs(overlap)**2, np.angle(projection) 
+
+def sft(A2, m, NA, NB, rad, inv):
+    """
+    Slow Foutier-Transform: keep separated the scales of the object
+    and image planes
+    which are normally linked in a Fast-Fourier Transform
+    The theory of the SFT is described in:
+        http://adsabs.harvard.edu/abs/2007OExpr..1515935S
+        
+    The parameter ``m'' defines the unit of the delivered frequency scale.
+    If it is the number of lambda/D, the frequency scale unit is lambda/D.
+    And the size of the FoV of the transformed signal is spans from -lambda/D to + lambda/D.
+    It is important to keep ``m'' non-dimensional as ``rad'' is in non-dimensional unit.
+    
+    :param A2: array from which we want the Fourier Transform.
+        The dimension must be (..., N, N) with N the size of the array.
+        First dimensions can be wavelength, for example.
+    :type A2: array
+    :param m: Range of the FoV of the plane of destination
+    :type m: float
+    :param NA: Number of column of A2
+    :type NA: int
+    :param NB: Number of column of the FT of A2
+    :type NB: int
+    :param rad: radius of the aperture, in pixel
+    :type rad: int
+    :param inv: if ``True'', it performs the invert Fourier transform
+        If ``"false'', it  performs the Fourier transform
+    :type inv: bool
+    :return: Fourier transform of A2, frequency scale and step of the
+    frequency scale. The unit of the scale is lambda/D
+    :rtype: tuple
+
+    """
+    """
+    Slow Foutier-Transform: keep separated the scales of the object
+    and image planes
+    which are normally linked in a Fast-Fourier Transform
+    The theory of the SFT is described in:
+        http://adsabs.harvard.edu/abs/2007OExpr..1515935S
+
+    :param A2: array from which we want the Fourier Transform.
+        The dimension must be (..., N, N) with N the size of the array.
+        First dimensions can be wavelength, for example.
+    :type A2: array
+    :param wl: wavelength, in meter
+    :type wl: float
+    :param diam: diameter of the aperture, in meter
+    :type diam: float
+    :param pscale: plate scale in mas/pixel
+    :type pscale: float
+    :param NA: Number of column of A2
+    :type NA: int
+    :param NB: Number of column of the FT of A2
+    :type NB: int
+    :param rad: radius of the aperture, in pixel
+    :type rad: int
+    :param sign: sign of the FT (-1 for the FT, +1 for the inverse FT)
+    :type sign: int
+    :return: Fourier transform of A2, frequency scale and step of the
+    frequency scale. The unit of the scale is lambda/D
+    :rtype: tuple
+
+    """
+    A2 = np.asarray(A2)
+    m = np.asarray(m)
+
+    m2 = NA / (rad*2)
+    coeff = m*m2/(NA*NB)
+
+    X = np.zeros((m.size, 1, NA))
+    U = np.zeros((m.size, NB))
+
+    stepX = m2/NA
+    range_NA = np.arange(NA)-NA/2.
+    X[:, 0, :] = range_NA[None,:] * stepX[:,None]
+    U[:] = (m[:, None]/NB)*(np.arange(NB)[None, :]-NB/2.)
+    U = U.reshape((m.size, 1, NB))
+    stepU = m/NB
+
+    if inv:
+        sign = 1.0
+    else:
+        sign = -1.0
+
+    A1 = np.exp(sign * 2j*np.pi *
+                np.matmul(np.transpose(U, axes=(0, -1, -2)), X))
+    A3 = np.exp(sign * 2j*np.pi *
+                np.matmul(np.transpose(X, axes=(0, -1, -2)), U))
+
+    B1 = np.matmul(A1, A2)
+    B = np.matmul(B1, A3)
+    C = B * coeff[:, None, None]
+
+    return C, U, stepU
 
 if __name__ == '__main__':
     psz = 256
@@ -843,7 +1162,7 @@ if __name__ == '__main__':
     pup_tel = np.flipud(pup_tel)
     nring = 3 # Number of rings of the hexagon
     ring_rad = 1.075 # Radius of the 1st ring, in metre
-    subpup_diam = 1.
+    subpup_diam = 0.5
     aper_rad = subpup_diam/2 # Radius of the sub-apertures
     holes_id = [33, 21, 15, 4] # ID of the hexagon coordinates on which the apertures are, the order correspond to the numbering of the beams.
     rot = 30
@@ -865,7 +1184,7 @@ if __name__ == '__main__':
     norm = False
 
     # HCIPy grids and propagator
-    pupil_grid = hp.make_pupil_grid(dims=num_pix, diameter=subaru_diameter)
+    pupil_grid = hp.make_pupil_grid(dims=psz, diameter=subaru_diameter)
     
     focal_grid = hp.make_focal_grid(sampling, num_airy,
                                        pupil_diameter=subaru_diameter,
@@ -904,12 +1223,14 @@ if __name__ == '__main__':
     # hp.imshow_field(aper * np.ravel(pup_tel) * glint_mask, cmap='gray')
     # plt.scatter(mems_seg_array[:,0], mems_seg_array[:,1])
 
-    aper = aper * np.ravel(pup_tel) * glint_mask
+    aper1 = aper * np.ravel(pup_tel) * glint_mask1
+    aper2 = aper * np.ravel(pup_tel) * glint_mask2
     # Instantiate the segmented mirror
     hsm = hp.SegmentedDeformableMirror(segments)
     
     # Make a pupil plane wavefront from aperture
-    wf = hp.Wavefront(aper, wavelength)
+    wf = hp.Wavefront(aper1, wavelength)
+    wf2 = hp.Wavefront(aper2, wavelength)
     
     def aber_to_opd(aber_rad, wavelength):
         aber_m = aber_rad * wavelength / (2 * np.pi)
@@ -924,10 +1245,11 @@ if __name__ == '__main__':
     # Flatten both SMs
     hsm.flatten()
     
-    ## PISTON
-    for i in [28]:
-        hsm.set_segment_actuators(i, opd_piston / 2 * i/10*0, aber_rad_tt, 0)
-
+    # PISTON
+    hsm.set_segment_actuators(28, wavelength/16, 0, 0)
+    hsm.set_segment_actuators(22, -wavelength/16, 0, 0)
+    plt.figure();hp.imshow_field(hsm.surface, mask=aper)
+    
     # # HCIPy
     # plt.figure(figsize=(8,8))
     # plt.title('OPD for HCIPy SM')
@@ -951,21 +1273,84 @@ if __name__ == '__main__':
     # plt.scatter(grilley[:,0][idx[1]], grillex[0, idx[0]], marker='o', c='r')
     # plt.title('HCIPy random arangement')
 
-    fried_parameter = 200 # meter
-    outer_scale = 20 # meter
+    fried_parameter = 0.2 # meter
+    outer_scale = 1000 # meter
     velocity = 10 # meter/sec
     
-    Cn_squared = hp.Cn_squared_from_fried_parameter(fried_parameter, 500e-9)
-    layer = hp.InfiniteAtmosphericLayer(pupil_grid, Cn_squared, outer_scale, velocity)
-    plt.figure()
-    hp.imshow_field(layer.phase_for(wavelength), cmap='RdBu')
-    plt.colorbar()
-    
+    np.random.seed(1)
+    Cn_squared = hp.Cn_squared_from_fried_parameter(fried_parameter, wavelength)
+    layer = hp.InfiniteAtmosphericLayer(pupil_grid, Cn_squared, outer_scale, velocity=velocity)
 
-    wf_turb = layer(wf)
-    wf_mask = hsm(wf_turb)
-    img = prop(wf_mask)
+    # wf = hp.Wavefront(aper, wavelength)
+    wf.total_power = 1
+    wf2.total_power = 1
+    # wf2 = hp.Wavefront(aper, wavelength*4)
+    wf = hsm(wf)
+    wf = layer(wf)
+    wf2 = hsm(wf2)
+    wf2 = layer(wf2)
+    
+    # wf2 = hsm(wf2)
+    # wf2 = layer(wf2)
+    
+    # opd = wf.phase * wavelength / (2*np.pi)
+    # opd2 = wf2.phase * (wavelength*4) / (2*np.pi)
+    plt.figure()
+    plt.subplot(121)
+    hp.imshow_field(wf.phase, mask=aper)
+    plt.subplot(122)
+    hp.imshow_field(wf2.phase, mask=aper)
+    # plt.figure()
+    # plt.subplot(121)
+    # hp.imshow_field(opd)
+    # plt.subplot(122)
+    # hp.imshow_field(opd2)    
+
+    # img = prop(wf)
+    # img2 = prop(wf2)
+    # plt.figure()
+    # plt.subplot(121)
+    # hp.imshow_field(np.log10(img.intensity / img.intensity.max()), vmin=-3)
+    # plt.colorbar()
+    # plt.subplot(122)
+    # hp.imshow_field(np.log10(img2.intensity / img2.intensity.max()), vmin=-3)
+    # plt.colorbar()
+    
+    um = 1e-6
+    singlemode_fiber_core_radius = 2 * um
+    fiber_NA = 0.05
+    fiber_length = 10
+    
+    single_mode_fiber = hp.StepIndexFiber(singlemode_fiber_core_radius, fiber_NA, fiber_length)
+    D_focus = 2.1 * singlemode_fiber_core_radius
+    focal_grid = hp.make_pupil_grid(psz, D_focus)
+    
+    focal_length = subaru_diameter/(2 * fiber_NA)
+    propagator = hp.FraunhoferPropagator(pupil_grid, focal_grid, focal_length=focal_length)
+    
+    wavelength = 1 * um
+    # wf = hp.Wavefront(aper, wavelength)
+    # wf.total_power = 1
+    
+    wf_foc = propagator(wf)
+    wf_foc2 = propagator(wf2)
+   
+    wf_smf = single_mode_fiber.forward(wf_foc)
+    wf_smf2 = single_mode_fiber.forward(wf_foc2)
+    
+    print("Single-mode fiber throughput {:g}".format(wf_smf.total_power))
+    print("Single-mode fiber throughput {:g}".format(wf_smf2.total_power))
     
     plt.figure()
-    hp.imshow_field(np.log10(img.intensity / img.intensity.max()), vmin=-3)
-    plt.colorbar()
+    plt.subplot(2,2,1)
+    hp.imshow_field(wf_smf.phase)
+    plt.subplot(2,2,2)
+    hp.imshow_field(wf_smf.power)
+    plt.subplot(2,2,3)
+    hp.imshow_field(wf_smf2.phase)
+    plt.subplot(2,2,4)
+    hp.imshow_field(wf_smf2.power)
+    
+    print(wf.phase[aper1==1].mean()-wf2.phase[aper2==1].mean())
+    print(wf_smf.phase.mean()-wf_smf2.phase.mean())
+
