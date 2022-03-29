@@ -43,7 +43,7 @@ the shift of the mode field can be done by editing ``mdf_loc'' variable
 
 import numpy as np
 import matplotlib.pyplot as plt
-import gasp_lib as lib
+import gasp_lib_generic as lib
 import hcipy as hp
 from timeit import default_timer as timer
 from scipy.interpolate import interp1d
@@ -64,7 +64,7 @@ activate_flux = False
 # Use an achromatic phase mask instead of air-delaying (chromatic) one beam with respect to the other
 activate_achromatic_phase_shift = False
 # To activate turbulence
-activate_turbulence = False
+activate_turbulence = True
 # Do a scan of the fringes
 activate_fringe_scan = True
 # Active beams
@@ -413,7 +413,9 @@ for t in timeline[:1]:
         2 * np.pi * OPD (because lambda = 1 metre).
         """
         phase_screen = np.exp(1j * layer.phase_for(1)[None,:] / wl[:,None])
-    
+    else:
+        phase_screen = np.ones((wl.size, pupil_grid.x.size))
+
     t_old = t
 
     """
