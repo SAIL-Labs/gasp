@@ -29,5 +29,6 @@ The GLINT instrument with directional coupler, 4T mask and C-Red2 has been imple
 
 ## Next step
 1. Cleaning the code and reducing the package dependency
-2. Implementing the tricoupler
-3. Implementing the fringe tracking capability
+2. Implementing a saving system of the data as for real observation data
+3. Implementing the tricoupler
+4. Implementing the fringe tracking capability
