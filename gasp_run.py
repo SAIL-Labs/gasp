@@ -397,7 +397,7 @@ i_out_bi = np.zeros((5, wl.size))
 t_old = timeline[0]
 
 start_timeline = timer()
-for t in timeline[:1]:
+for t in timeline[:]:
     if activate_fringe_scan:
         mirror_pistons[beam_to_scan] = scan_range[t]
         
