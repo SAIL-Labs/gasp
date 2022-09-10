@@ -71,6 +71,8 @@ activate_fringe_scan = True
 active_beams = [True, True, True, True]
 # Activate chromatic mode field of the waveguides
 activate_chromatic_mode_field = True
+# Create a matrix of the detector instead of assuming the output as single rows.
+activate_matrix_detector = False
 
 # Set the seed to an integer for repeatable simulation, to ``None'' otherwise
 seed = 1
@@ -273,7 +275,10 @@ wl = lib.oversample_wavelength(wl0, oversampling_wl)
 Beam combiner
 """
 zeta_dict = lib.load_zeta_file(zeta_path)
-combiner, splitter_interfA_list, splitter_interfB_list, kappa_AB_list, kappa_BA_list, splitter_photoA_list, splitter_photoB_list = lib.get_glint_chip_markII(wl, zeta_dict=zeta_dict)
+combiner, splitter_interfA_list, splitter_interfB_list, \
+    kappa_AB_list, kappa_BA_list, \
+        splitter_photoA_list, splitter_photoB_list = \
+            lib.get_glint_chip_markII(wl, zeta_dict=zeta_dict)
 
 """
 Create the pupil, MEMS and aperture mask
@@ -397,7 +402,7 @@ i_out_bi = np.zeros((5, wl.size))
 t_old = timeline[0]
 
 start_timeline = timer()
-for t in timeline[:]:
+for t in timeline[:5]:
     if activate_fringe_scan:
         mirror_pistons[beam_to_scan] = scan_range[t]
         
@@ -469,16 +474,22 @@ for t in timeline[:]:
     i_out = abs(a_out)**2
     monitor_i_out.append(i_out)
     
-    # Project on the detector...
-    det_img, tracks = lib.create_image(344, 96, [96-wl0.size], channel_positions, sigma, i_out.T)
-    data.append(det_img)
-
-    # ...and add some noise
-    noisy_img = lib.add_noise(det_img, ndark, gainsys, offset, read_noise,\
-                          activate_photon_noise, activate_detector_noise,\
-                              activate_digitise)
-        
-    noisy_data.append(noisy_img)
+    if activate_matrix_detector:
+        # Project on the detector...
+        det_img, tracks = lib.create_image(344, 96, [96-wl0.size], channel_positions, sigma, i_out.T)
+        data.append(det_img)
+    
+        # ...and add some noise
+        noisy_img = lib.add_noise(det_img, ndark, gainsys, offset, read_noise,\
+                              activate_photon_noise, activate_detector_noise,\
+                                  activate_digitise)
+            
+        noisy_data.append(noisy_img)
+    else:
+        noisy_i_out = lib.add_noise(i_out, ndark, gainsys, offset, read_noise,\
+                              activate_photon_noise, activate_detector_noise,\
+                                  activate_digitise)
+        noisy_data.append(noisy_i_out)
 
 stop_timeline = timer()
 
@@ -486,9 +497,6 @@ print(stop_timeline - start_timeline)
 monitor_i_out = np.array(monitor_i_out)
 data = np.array(data)
 noisy_data = np.array(noisy_data)
-
-plt.figure()
-plt.imshow(det_img, origin='upper')
 
 # # plt.figure()
 # # plt.plot(zeta_dict['wl_scale'], zeta_dict['b1null1'])
