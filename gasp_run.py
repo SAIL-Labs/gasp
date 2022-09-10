@@ -213,7 +213,7 @@ microlens_focal_length = 95e-6
 mode_field_loc = (0, 0) # Position of the mode field of the waveguide, in um
 mfd_xy = (5.24e-6, 4.75e-6) # MFD (x, y axes) of the mode field of the waveguide, in metre, at 1550 nm
 mode_field_theta = 0 # Transverse orientation of the mode field, in radian
-chromatic_mfd_xy = np.loadtxt('/mnt/96980F95980F72D3/glint/gasp/res/chromatic_mode_field.txt') # MFD (x, y axes) of the mode field of the waveguide, in metre, at different wavelengths
+chromatic_mfd_xy = np.loadtxt('/mnt/96980F95980F72D3/glint/gasp/ressources/chromatic_mode_field.txt') # MFD (x, y axes) of the mode field of the waveguide, in metre, at different wavelengths
 
 
 # =============================================================================
