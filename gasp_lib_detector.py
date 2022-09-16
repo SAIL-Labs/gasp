@@ -124,7 +124,7 @@ def create_image(ysz, xsz, col_start, channel_positions, sigmas, outputs):
         col_start = np.array([col_start[0]] * nb_wl)
     
     tracks = create_tracks(ysz, channel_positions, sigmas)
-    flux = outputs[:,:,None] * tracks
+    flux = outputs[:,:,None] * tracks # Shape (tracks, spectral channels, spatial extent)
     img = np.zeros((ysz, xsz))
     for k in range(flux.shape[0]): # Iterate over outputs
         img += np.pad(flux[k].T, ((0,0),(col_start[k], xsz - (col_start[k]+nb_wl))),\

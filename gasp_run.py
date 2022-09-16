@@ -60,19 +60,19 @@ activate_detector_noise = True
 # Digitise the images
 activate_digitise = False
 # To simulate the flux of a star, otherwise the incoming fluxes are equal to 1
-activate_flux = False
+activate_flux = True
 # Use an achromatic phase mask instead of air-delaying (chromatic) one beam with respect to the other
 activate_achromatic_phase_shift = False
 # To activate turbulence
-activate_turbulence = True
+activate_turbulence = False
 # Do a scan of the fringes
-activate_fringe_scan = True
+activate_fringe_scan = False
 # Active beams
 active_beams = [True, True, True, True]
 # Activate chromatic mode field of the waveguides
 activate_chromatic_mode_field = True
-# Create a matrix of the detector instead of assuming the output as single rows.
-activate_matrix_detector = False
+# Recreate GLINt Mark II detector layout instead of assuming the output as single rows.
+activate_glint_markII = True
 
 # Set the seed to an integer for repeatable simulation, to ``None'' otherwise
 seed = 1
@@ -83,10 +83,10 @@ psz = 256
 oversz = 4
 
 zeta_path = '/mnt/96980F95980F72D3/nulling_tricoupler/20210322_zeta_coeff_raw.hdf5'
-# zeta_path = '/mnt/96980F95980F72D3/glint/simulation/zeta_coeff.hdf5'
+wavecal = np.load('/mnt/96980F95980F72D3/glint/gasp/ressources/20200601_wl_to_px.npy')
 
-opd_min = -10e-6
-opd_max = 10e-6
+opd_min = -3e-6
+opd_max = 3e-6
 
 # =============================================================================
 # Telescope, AO parameters and MEMS parameters
@@ -122,9 +122,10 @@ Parameters for the creation of the pupil.
 We assume the sub-apertures are set on a hexagonal pavement
 (Hex-shaped segmented mirrors)
 """
-holes_id = [33, 21, 15, 4] # ID of the hexagon coordinates on which the apertures are, the order correspond to the numbering of the beams (B1, B2...).
-mirror_pistons = [wavel/4, 0, wavel/4, 0]
-mirror_pistons = [0., 0., 0., 0.]
+holes_id = [28, 22, 31, 33] # ID of the hexagon coordinates on which the apertures are, the order correspond to the numbering of the beams (B1, B2...).
+mirror_pistons = [wavel/8, 0, wavel/8, 0]
+# mirror_pistons = np.random.uniform(-wavel, wavel, 4)
+# mirror_pistons = [0., 0., 0., 0.]
 
 # =============================================================================
 # Atmo parameters
@@ -145,8 +146,8 @@ fps = 2000  # frame rate (in Hz)
 delay = 0.001  # delay of the servo loop (in second)
 # Detector Integration Time, time during which the detector collects photon (in second)
 dit = 1 / fps
-timestep = 1e-4  # time step of the simulation (in second)
-time_obs = 0.1  # duration of observation (in second)
+timestep = 1e-3  # time step of the simulation (in second)
+time_obs = 0.001  # duration of observation (in second)
 
 # Let's define the axe of time on which any event will happened (turbulence, frame reading, servo loop)
 timeline = np.around(np.arange(0, time_obs, timestep,
@@ -187,18 +188,18 @@ channel_positions = [channel_positions[11], channel_positions[9],
                      channel_positions[6], channel_positions[4],
                      channel_positions[15], channel_positions[13], channel_positions[2], channel_positions[0]]
 
-sigma = 0.9 # Width of the tracks in the spatial direction
+track_width = 0.9 # Width of the tracks in the spatial direction
 
 # =============================================================================
 # Flux parameters
 # =============================================================================
 # Magnitude of the star, the smaller, the brighter.
-magnitude = 5
+magnitude = -5
 
 # Rule of thumb: 0 mag at H = 1e10 ph/um/s/m^2
 # e.g. An H=5 object gives 1 ph/cm^2/s/A
 MAG0FLUX = 1e10  # ph/um/s/m^2
-SCEXAO_THROUGHPUT = 0.2
+SCEXAO_THROUGHPUT = 1.#0.2
 
 # =============================================================================
 # MLA and injection properties
@@ -220,7 +221,7 @@ chromatic_mfd_xy = np.loadtxt('/mnt/96980F95980F72D3/glint/gasp/ressources/chrom
 # Scan fringes
 # =============================================================================
 beam_to_scan = 0
-scan_range = np.linspace(opd_min, opd_max, 1001)
+scan_range = np.linspace(opd_min, opd_max, 101)
 
 if activate_fringe_scan:
     magnitude = -6
@@ -265,11 +266,20 @@ star_photons = MAG0FLUX * 10**(-0.4*magnitude) * \
 print('Star photo-electrons', star_photons *
       QE, (star_photons*QE)**0.5)
 
+
 """
 Create the spectral dispersion
 """
 wl0 = np.arange(wavel-bandwidth/2, wavel+bandwidth/2+dwl, dwl)
 wl = lib.oversample_wavelength(wl0, oversampling_wl)
+
+"""
+Spectrum
+"""
+star_spectrum = np.exp(-(wl-1.5e-6)**2/(2*wl.std()**2*0.02)) + 0.5*np.exp(-(wl-1.6e-6)**2/(2*wl.std()**2*0.02))
+star_spectrum = np.ones_like(wl)
+star_spectrum /= star_spectrum.sum() 
+
 
 """
 Beam combiner
@@ -302,15 +312,15 @@ hex_mems, segments = hp.make_hexagonal_segmented_aperture(num_rings,
                                                     gap_size,
                                                     starting_ring=0,
                                                     return_segments=True)
-hex_mems = hp.evaluate_supersampled(hex_mems, pupil_grid, 1)
-segments = hp.evaluate_supersampled(segments, pupil_grid, 1)
+hex_mems = hp.evaluate_supersampled(hex_mems, pupil_grid, 5)
+segments = hp.evaluate_supersampled(segments, pupil_grid, 5)
 hsm = hp.SegmentedDeformableMirror(segments)
 hsm.flatten() # Ensure MEMS is flatten
 
 # Set the required pistons
 for i in range(len(holes_id)):
-    hsm.set_segment_actuators(holes_id[i], mirror_pistons[i], 1e-3, 1e-3)
-
+    hsm.set_segment_actuators(holes_id[i], mirror_pistons[i], -1.3, 2.5)
+    
 # Create the aperture mask
 aperture_mask, sub_aper_mask, sub_aper_coords = \
     lib.make_mask_aperture(pupil_grid, holes_id, num_rings,
@@ -319,6 +329,7 @@ aperture_mask, sub_aper_mask, sub_aper_coords = \
 translation_term = np.array([np.min(pupil_grid.x / pupil_grid.delta[0]),
                              np.min(pupil_grid.y / pupil_grid.delta[1])])
 sub_aper_coords = sub_aper_coords / pupil_grid.delta - translation_term
+sub_aper_mask = np.array(sub_aper_mask)
 
 # Compute how many pixels to roll the sub apertures to the center
 center = np.array([pupil_grid.x.size**0.5 / 2, pupil_grid.x.size**0.5 / 2])
@@ -326,13 +337,11 @@ shift_sub_coords = np.around(center - sub_aper_coords)
 shift_sub_coords = shift_sub_coords.astype(int)
 shift_sub_coords = shift_sub_coords[:,1] * psz + shift_sub_coords[:,0]
 
-# Final aperture
+# Final aperture, to plot the overall mask only
 aperture = hex_mems * np.ravel(pup_tel) * aperture_mask
 
 # Final subaperture
-sub_apertures = [hex_mems * np.ravel(pup_tel) * elt for elt in sub_aper_mask]
-sub_apertures = [hp.Wavefront(elt) for elt in sub_apertures]
-
+aperture_surface = aperture * np.exp(1j*2*np.pi/wl[:,None] * 2 * hsm.surface[None,:])
 """
 Create the phase screen
 """
@@ -401,10 +410,15 @@ i_out_bi = np.zeros((5, wl.size))
 
 t_old = timeline[0]
 
+print('Start simulation')
 start_timeline = timer()
-for t in timeline[:5]:
+for t in timeline[:]:
+    print(list(timeline).index(t)+1, '/', len(timeline))
+
     if activate_fringe_scan:
         mirror_pistons[beam_to_scan] = scan_range[t]
+        hsm.set_segment_actuators(holes_id[beam_to_scan], mirror_pistons[beam_to_scan], 0., 0.)
+        aperture_surface = aperture * np.exp(1j*2*np.pi/wl[:,None] * 2 * hsm.surface[None,:])
         
     if activate_turbulence:
         layer.evolve_until(t - t_old)
@@ -432,7 +446,19 @@ for t in timeline[:5]:
     phases = []
 
     for i in np.arange(len(holes_id)): # Iterates over subapertures
-        wavefront = sub_apertures[i].electric_field * phase_screen
+        wavefront = aperture_surface * sub_aper_mask[i, None, :]
+
+        """
+        Some cells of ``wavefront'' are $-0+0j$ that bias the calculation of
+        the phase.
+        We need to force them to a positive 0.
+        This operation should be done after applying the phase screen as the
+        problem arises there too but we lost the full phase screen hence
+        the capability to move it upon the sub-aperture.
+        """
+        wavefront[np.tile(sub_aper_mask[i, None, :], (wl.size, 1)) == False] = 0
+        wavefront *= phase_screen
+
         wavefront = np.roll(wavefront, shift_sub_coords[i], axis=1)
         injection, phase = lib.calculate_injection_and_phase(wavefront, pupil_mode_field)
         injections.append(injection)
@@ -460,7 +486,7 @@ for t in timeline[:5]:
     # Create incoming wavefronts
     a_in = np.exp(1j * phases)
     if activate_flux:
-        a_in *= injections.T**0.5 * star_photons**0.5
+        a_in *= injections**0.5 * star_photons**0.5 #* star_spectrum[:,None]**0.5
     
     a_in[:, ~active_beams] = 0.
 
@@ -474,61 +500,82 @@ for t in timeline[:5]:
     i_out = abs(a_out)**2
     monitor_i_out.append(i_out)
     
-    if activate_matrix_detector:
-        # Project on the detector...
-        det_img, tracks = lib.create_image(344, 96, [96-wl0.size], channel_positions, sigma, i_out.T)
+    if activate_glint_markII:
+        # Project on the detector
+        col_start = [int(np.around(np.poly1d(elt)(wl0.max()*1e9))) for elt in wavecal]
+        det_img, tracks = lib.create_image(344, 96, [col_start[0]], channel_positions, track_width, i_out.T[:,::-1])
         data.append(det_img)
     
-        # ...and add some noise
-        noisy_img = lib.add_noise(det_img, ndark, gainsys, offset, read_noise,\
+        # add some noise
+        noisy_img = lib.add_noise(det_img, ndark*dit, gainsys, offset, read_noise,\
                               activate_photon_noise, activate_detector_noise,\
                                   activate_digitise)
             
         noisy_data.append(noisy_img)
     else:
-        noisy_i_out = lib.add_noise(i_out, ndark, gainsys, offset, read_noise,\
+        noisy_i_out = lib.add_noise(i_out, ndark*dit, gainsys, offset, read_noise,\
                               activate_photon_noise, activate_detector_noise,\
                                   activate_digitise)
         noisy_data.append(noisy_i_out)
 
 stop_timeline = timer()
+print('End simulation')
 
 print(stop_timeline - start_timeline)
 monitor_i_out = np.array(monitor_i_out)
 data = np.array(data)
 noisy_data = np.array(noisy_data)
 
-# # plt.figure()
-# # plt.plot(zeta_dict['wl_scale'], zeta_dict['b1null1'])
-# # plt.plot(wl0*1e9, i_out[:,0] / i_out[:,12])
+# =============================================================================
+# Plots
+# =============================================================================
+plt.figure()
+plt.imshow(data[0])
+plt.title('Noiseless frame')
 
-# if activate_fringe_scan:
-#     monitor_i_out = monitor_i_out.mean(1)
+plt.figure()
+plt.imshow(noisy_data[0])
+plt.title('Noisy frame')
+
+plt.figure()
+count = 0
+for k in range(6):
+    plt.subplot(3, 2, k+1)
+    plt.plot(timeline, monitor_i_out.mean(1)[:,count])
+    plt.plot(timeline, monitor_i_out.mean(1)[:,count + 1])
+    plt.grid()
+    plt.xlabel('Time (s)')
+    plt.ylabel('Intensity (count)')
+    plt.title(null_labels[k])
+    count += 2
+
+if activate_fringe_scan:
+    monitor_i_out = monitor_i_out.mean(1)
     
-#     plt.figure()
-#     count = 0
-#     for k in range(6):
-#         plt.subplot(3, 2, k+1)
-#         plt.plot(scan_range/wavel, monitor_i_out[:,count])
-#         plt.plot(scan_range/wavel, monitor_i_out[:,count + 1])
-#         plt.grid()
-#         plt.xlabel('Scan range')
-#         plt.ylabel('Intensity (count)')
-#         plt.title(null_labels[k])
-#         count += 2
+    plt.figure()
+    count = 0
+    for k in range(6):
+        plt.subplot(3, 2, k+1)
+        plt.plot(scan_range/wavel, monitor_i_out[:,count])
+        plt.plot(scan_range/wavel, monitor_i_out[:,count + 1])
+        plt.grid()
+        plt.xlabel('Scan range')
+        plt.ylabel('Intensity (count)')
+        plt.title(null_labels[k])
+        count += 2
 
-#     plt.figure()
-#     count = 0
-#     for k in range(6):
-#         plt.subplot(3, 2, k+1)
-#         n = data[:,int(channel_positions[count])-10:int(channel_positions[count])+10,-wl0.size:]
-#         n = n.mean(2).sum(1)
-#         an = data[:,int(channel_positions[count+1])-10:int(channel_positions[count+1])+10,-wl0.size:]
-#         an = an.mean(2).sum(1)
-#         plt.plot(scan_range/wavel, n)
-#         plt.plot(scan_range/wavel, an)
-#         plt.grid()
-#         plt.xlabel('Scan range')
-#         plt.ylabel('Intensity (count)')
-#         plt.title(null_labels[k])
-#         count += 2    
+    plt.figure()
+    count = 0
+    for k in range(6):
+        plt.subplot(3, 2, k+1)
+        n = data[:,int(channel_positions[count])-10:int(channel_positions[count])+10,-wl0.size:]
+        n = n.mean(2).sum(1)
+        an = data[:,int(channel_positions[count+1])-10:int(channel_positions[count+1])+10,-wl0.size:]
+        an = an.mean(2).sum(1)
+        plt.plot(scan_range/wavel, n)
+        plt.plot(scan_range/wavel, an)
+        plt.grid()
+        plt.xlabel('Scan range')
+        plt.ylabel('Intensity (count)')
+        plt.title(null_labels[k])
+        count += 2    
