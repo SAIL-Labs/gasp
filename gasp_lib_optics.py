@@ -122,7 +122,9 @@ def create_aperture_mask(pup_tel, pupil_diam, nrings, ring_rad, aper_rad, rot, h
     csz = len(pupil)
     pscale = pupil_diam / csz
     
-    mems_seg_array = hex_grid_coords(nrings, ring_rad/pscale, rot=rot).T
+    # mems_seg_array = hex_grid_coords(nrings, ring_rad/pscale, rot=rot).T
+    mems_seg_array = hp.make_hexagonal_grid(ring_rad/pscale, 3)
+    mems_seg_array = np.array([mems_seg_array.x, mems_seg_array.y]).T     
     glint_mask_pos_csz = mems_seg_array[holes_idx,:]    
     glint_mask, maskarray = make_N_hole_mask(csz, glint_mask_pos_csz, aper_rad/pscale, norm)
     
@@ -252,7 +254,9 @@ def make_mask_aperture(pupil_grid, segments, num_rings, hex_rad, rot, subpup_dia
     :rtype: tuple
 
     """
-    mems_seg_array = hex_grid_coords(num_rings, hex_rad, rot=rot).T
+    # mems_seg_array = hex_grid_coords(num_rings, hex_rad, rot=rot).T
+    mems_seg_array = hp.make_hexagonal_grid(hex_rad, 3)
+    mems_seg_array = np.array([mems_seg_array.x, mems_seg_array.y]).T 
     mems_seg_array = mems_seg_array[segments]
     
     sub_aper = []
@@ -593,4 +597,33 @@ def uniform_disk(ysz, xsz, radius, rebin, between_pix=False, norm=False):
         res = res / (np.sum(res))
 
     return(res)
+
+if __name__ == "__main__":
+    num_rings = 3
+    hex_rad = 0.906056
+    rot = 30
+    holes_id = [33, 21, 15, 4]
+    
+    mems_seg_array = hex_grid_coords(num_rings, hex_rad, rot=rot).T
+    
+    plt.figure()
+    plt.scatter(mems_seg_array[:,0], mems_seg_array[:,1])
+    for k in range(mems_seg_array.shape[0]):
+        if k in holes_id:
+            plt.text(mems_seg_array[k,0], mems_seg_array[k,1], str(k), weight='bold')
+        else:
+            plt.text(mems_seg_array[k,0], mems_seg_array[k,1], str(k))
+
+            
+    hex_grid2 = hp.make_hexagonal_grid(hex_rad, 3)
+    hex_grid2 = np.array([hex_grid2.x, hex_grid2.y]).T
+    holes_id = [28, 22, 31, 33]
+    
+    plt.figure()
+    plt.scatter(hex_grid[:,0], hex_grid[:,1])
+    for k in range(mems_seg_array.shape[0]):
+        if k in holes_id:
+            plt.text(hex_grid[k,0], hex_grid[k,1], str(k), weight='bold')
+        else:
+            plt.text(hex_grid[k,0], hex_grid[k,1], str(k))
 
