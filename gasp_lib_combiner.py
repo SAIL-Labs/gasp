@@ -411,8 +411,11 @@ def create_single_tricoupler(kappa_LL, kappa_LC, kappa_LR, \
     
     return tricoupler
 
-def create_chip(couplers, nb_apertures, photometric_taps, configuration='all-in-all'):
-    pass
+def create_chip(couplers, nb_apertures, photometric_taps, configuration='all-in-all', **kwargs):
+    if configuration == 'all-in-all':
+        return create_chip_all_in_all(couplers, nb_apertures, photometric_taps)
+    elif configuration == 'pair-wise':
+        return create_chip_pairwise(couplers, nb_apertures, photometric_taps, **kwargs)
 
 def create_chip_all_in_all(couplers, nb_apertures, photometric_taps):
     """
@@ -532,10 +535,6 @@ def create_chip_pairwise(couplers, nb_apertures, photometric_taps, **kwargs):
     :rtype: array
 
     """
-    # nb_apertures = 4
-    # nb_baselines = nb_apertures // 2
-    # couplers = np.ones((nb_baselines, 11, 2, 2))
-    # photometric_taps = True
 
     nb_baselines = nb_apertures // 2
     """
@@ -621,3 +620,21 @@ def _assemble_couplers(couplers, nb_baselines, nb_apertures):
     combiners[:, -nb_apertures:, -nb_apertures:] = np.eye(nb_apertures)   
     
     return combiners
+
+if __name__ == "__main__":
+    nb_apertures = 4
+    nb_baselines = nb_apertures // 2
+    wl = np.arange(11)
+    couplers = np.ones((nb_baselines, wl.size, 3, 3))
+    photometric_taps = True
+    
+    chip = create_chip_pairwise(couplers, nb_apertures, photometric_taps, split_ratio=0.6*np.ones(wl.size))
+    chip2 = create_chip(couplers, nb_apertures, photometric_taps, 'pair-wise', split_ratio=0.6*np.ones(wl.size))
+
+    nb_baselines = (nb_apertures * (nb_apertures - 1)) // 2
+    couplers = np.ones((nb_baselines, wl.size, 2, 2))
+    chip3 = create_chip_all_in_all(couplers, nb_apertures, photometric_taps)
+    chip4 = create_chip(couplers, nb_apertures, photometric_taps, 'all-in-all')
+    
+    print(np.all(chip == chip2)) # -> True
+    print(np.all(chip3 == chip4)) # -> True
