@@ -39,6 +39,8 @@ This first feature is not implemented and no function exist for it,
 the shift of the mode field can be done by editing ``mdf_loc'' variable
 (all waveguides will be shifted in the same way).
 
+References:
+    - outer scale L0: https://ui.adsabs.harvard.edu/abs/2017MNRAS.465.4931O/abstract
 """
 
 import numpy as np
@@ -54,7 +56,7 @@ from scipy.interpolate import interp1d
 # To save data
 save = False
 # To simulate photon noise
-activate_photon_noise = False
+activate_photon_noise = True
 # To simulate the detector noise
 activate_detector_noise = True
 # Digitise the images
@@ -64,7 +66,7 @@ activate_flux = True
 # Use an achromatic phase mask instead of air-delaying (chromatic) one beam with respect to the other
 activate_achromatic_phase_shift = False
 # To activate turbulence
-activate_turbulence = False
+activate_turbulence = True
 # Do a scan of the fringes
 activate_fringe_scan = False
 # Active beams
@@ -125,7 +127,7 @@ We assume the sub-apertures are set on a hexagonal pavement
 holes_id = [28, 22, 31, 33] # ID of the hexagon coordinates on which the apertures are, the order correspond to the numbering of the beams (B1, B2...).
 mirror_pistons = [wavel/8, 0, wavel/8, 0]
 # mirror_pistons = np.random.uniform(-wavel, wavel, 4)
-# mirror_pistons = [0., 0., 0., 0.]
+mirror_pistons = [0., 0., 0., 0.]
 
 # =============================================================================
 # Atmo parameters
@@ -134,7 +136,7 @@ mirror_pistons = [wavel/8, 0, wavel/8, 0]
 r0 = 0.16
 ll = tdiam * oversz  # Physical extension of the wavefront (in meter)
 # Outer scale for the model of turbulence, keep it close to infinity for Kolmogorov turbulence (the simplest form) (in meter)
-L0 = 1e7 # outer scale, in metre
+L0 = 25.5 # outer scale, in metre
 wind_speed = 9.8  # speed of the wind (in m/s)
 angle = 45  # Direction of the wind
 
@@ -147,7 +149,7 @@ delay = 0.001  # delay of the servo loop (in second)
 # Detector Integration Time, time during which the detector collects photon (in second)
 dit = 1 / fps
 timestep = 1e-3  # time step of the simulation (in second)
-time_obs = 0.001  # duration of observation (in second)
+time_obs = 0.01  # duration of observation (in second)
 
 # Let's define the axe of time on which any event will happened (turbulence, frame reading, servo loop)
 timeline = np.around(np.arange(0, time_obs, timestep,
@@ -194,12 +196,13 @@ track_width = 0.9 # Width of the tracks in the spatial direction
 # Flux parameters
 # =============================================================================
 # Magnitude of the star, the smaller, the brighter.
-magnitude = -5
+magnitude = 0.
 
 # Rule of thumb: 0 mag at H = 1e10 ph/um/s/m^2
 # e.g. An H=5 object gives 1 ph/cm^2/s/A
 MAG0FLUX = 1e10  # ph/um/s/m^2
-SCEXAO_THROUGHPUT = 1.#0.2
+SCEXAO_THROUGHPUT = 0.2 # Evaluated from Nem's paper about the throughput of scexao
+GLINT_THROUGHPUT = 0.01 # Tuned to set limiting magnitude at 0
 
 # =============================================================================
 # MLA and injection properties
@@ -221,7 +224,7 @@ chromatic_mfd_xy = np.loadtxt('/mnt/96980F95980F72D3/glint/gasp/ressources/chrom
 # Scan fringes
 # =============================================================================
 beam_to_scan = 0
-scan_range = np.linspace(opd_min, opd_max, 101)
+scan_range = np.linspace(opd_min, opd_max, 25)
 
 if activate_fringe_scan:
     magnitude = -6
@@ -262,7 +265,7 @@ segment_flat_to_flat /= compr_pup_to_mems
 # Number of photons collected
 pupil_area = np.pi / 4 * subpup_diam**2
 star_photons = MAG0FLUX * 10**(-0.4*magnitude) * \
-    SCEXAO_THROUGHPUT * pupil_area * bandwidth*1e6 * dit
+    SCEXAO_THROUGHPUT * GLINT_THROUGHPUT * pupil_area * bandwidth*1e6 * dit
 print('Star photo-electrons', star_photons *
       QE, (star_photons*QE)**0.5)
 
@@ -319,7 +322,7 @@ hsm.flatten() # Ensure MEMS is flatten
 
 # Set the required pistons
 for i in range(len(holes_id)):
-    hsm.set_segment_actuators(holes_id[i], mirror_pistons[i], -1.3, 2.5)
+    hsm.set_segment_actuators(holes_id[i], mirror_pistons[i], 0., 0.)
     
 # Create the aperture mask
 aperture_mask, sub_aper_mask, sub_aper_coords = \
@@ -342,12 +345,14 @@ aperture = hex_mems * np.ravel(pup_tel) * aperture_mask
 
 # Final subaperture
 aperture_surface = aperture * np.exp(1j*2*np.pi/wl[:,None] * 2 * hsm.surface[None,:])
+
 """
 Create the phase screen
 """
 if activate_turbulence:
     Cn_squared = hp.Cn_squared_from_fried_parameter(r0, wavel_r0)
-    layer = hp.InfiniteAtmosphericLayer(pupil_grid, Cn_squared, L0/10, wind_speed)
+    layer = hp.InfiniteAtmosphericLayer(pupil_grid, Cn_squared, L0/10, [wind_speed*np.cos(np.radians(angle)), wind_speed*np.sin(np.radians(angle))])
+    layer0 = layer.phase_for(1).copy()
 
 
 """
@@ -421,7 +426,7 @@ for t in timeline[:]:
         aperture_surface = aperture * np.exp(1j*2*np.pi/wl[:,None] * 2 * hsm.surface[None,:])
         
     if activate_turbulence:
-        layer.evolve_until(t - t_old)
+        layer.evolve_until(t - t_old) 
         
         """
         Because I just keep the electric_field, hcipy interface
@@ -505,18 +510,13 @@ for t in timeline[:]:
         col_start = [int(np.around(np.poly1d(elt)(wl0.max()*1e9))) for elt in wavecal]
         det_img, tracks = lib.create_image(344, 96, [col_start[0]], channel_positions, track_width, i_out.T[:,::-1])
         data.append(det_img)
-    
-        # add some noise
-        noisy_img = lib.add_noise(det_img, ndark*dit, gainsys, offset, read_noise,\
-                              activate_photon_noise, activate_detector_noise,\
-                                  activate_digitise)
-            
-        noisy_data.append(noisy_img)
     else:
-        noisy_i_out = lib.add_noise(i_out, ndark*dit, gainsys, offset, read_noise,\
-                              activate_photon_noise, activate_detector_noise,\
-                                  activate_digitise)
-        noisy_data.append(noisy_i_out)
+        det_img = i_out
+
+    noisy_img = lib.add_noise(det_img, QE, ndark*dit, gainsys, offset, read_noise,\
+                          activate_photon_noise, activate_detector_noise,\
+                              activate_digitise)
+    noisy_data.append(noisy_img)
 
 stop_timeline = timer()
 print('End simulation')
@@ -525,16 +525,20 @@ print(stop_timeline - start_timeline)
 monitor_i_out = np.array(monitor_i_out)
 data = np.array(data)
 noisy_data = np.array(noisy_data)
+monitor_injections = np.array(monitor_injections)
+monitor_phases = np.array(monitor_phases)
 
 # =============================================================================
 # Plots
 # =============================================================================
 plt.figure()
 plt.imshow(data[0])
+plt.colorbar()
 plt.title('Noiseless frame')
 
 plt.figure()
-plt.imshow(noisy_data[0])
+plt.imshow(noisy_data[0] - offset)
+plt.colorbar()
 plt.title('Noisy frame')
 
 plt.figure()
@@ -550,16 +554,14 @@ for k in range(6):
     count += 2
 
 if activate_fringe_scan:
-    monitor_i_out = monitor_i_out.mean(1)
-    
     plt.figure()
     count = 0
     for k in range(6):
         plt.subplot(3, 2, k+1)
-        plt.plot(scan_range/wavel, monitor_i_out[:,count])
-        plt.plot(scan_range/wavel, monitor_i_out[:,count + 1])
+        plt.plot(scan_range/wavel, monitor_i_out.mean(1)[:,count])
+        plt.plot(scan_range/wavel, monitor_i_out.mean(1)[:,count + 1])
         plt.grid()
-        plt.xlabel('Scan range')
+        plt.xlabel(r'Scan range ($\lambda$)')
         plt.ylabel('Intensity (count)')
         plt.title(null_labels[k])
         count += 2
@@ -575,7 +577,7 @@ if activate_fringe_scan:
         plt.plot(scan_range/wavel, n)
         plt.plot(scan_range/wavel, an)
         plt.grid()
-        plt.xlabel('Scan range')
+        plt.xlabel(r'Scan range ($\lambda$)')
         plt.ylabel('Intensity (count)')
         plt.title(null_labels[k])
         count += 2    
