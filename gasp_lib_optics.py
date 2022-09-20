@@ -75,7 +75,7 @@ def atmo_screen(isz, ll, r0, L0, fc=19.5, correc=1.0, pdiam=None, seed=None):
 
 def calculate_injection_and_phase(wavefront_field, mode_field):
     """
-    Give the injection rate and the phase of the light in the waveguide.
+    Give the injection ratio and the phase of the light in the waveguide.
     If arrays have more than 1D, the calculation is performed
     on the last axis.
     
