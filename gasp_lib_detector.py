@@ -19,7 +19,7 @@ These functions create the image as sampled on the detector and simulate the noi
     - Digitisation to convert pixels' values in 16-bit integers
 """
 
-def add_noise(image, Ndark, gainsys, offset, sigma_ron, activate_poisson, activate_ron, activate_digit):
+def add_noise(image, QE, Ndark, gainsys, offset, sigma_ron, activate_poisson, activate_ron, activate_digit):
     """
     Wrapper which generate all the noises when the signal is acquired by the\
         the detector.
@@ -28,9 +28,10 @@ def add_noise(image, Ndark, gainsys, offset, sigma_ron, activate_poisson, activa
         
     :param image: Frame to noise
     :type image: 2D-array
+    :param QE: quantum efficiency of the detector
+    :type QE: float
     :param Ndark: dark current, in electrons per frame.
-    :type Ndark: float
-    :param gainsys: Conversion gain from e- to ADU, in ADU/e-
+    :type Ndark: float    :param gainsys: Conversion gain from e- to ADU, in ADU/e-
     :type gainsys: float
     :param offset: Offset added by the readout in the digitilization process
     :type offset: float
@@ -48,7 +49,7 @@ def add_noise(image, Ndark, gainsys, offset, sigma_ron, activate_poisson, activa
     """
     noisy_image = image
     if activate_poisson:
-        noisy_image = add_poisson_noise(noisy_image, Ndark)
+        noisy_image = add_poisson_noise(noisy_image, QE, Ndark)
     if activate_ron:
         noisy_image = do_readout(noisy_image, gainsys, offset, sigma_ron)
     if activate_digit:
@@ -56,13 +57,15 @@ def add_noise(image, Ndark, gainsys, offset, sigma_ron, activate_poisson, activa
 
     return noisy_image
 
-def add_poisson_noise(image, Ndark):
+def add_poisson_noise(image, QE, Ndark):
     """
     Generate the Poisson noise from photons and dark current.
     
     :param image: signal to add Poisson noise, in electron\
         (so consider to add the quantum efficiency in the `image` input)
     :type image: 2D-array
+    :param QE: quantum efficiency of the detector
+    :type QE: float    
     :param Ndark: dark current, in electrons per frame.
     :type Ndark: float
     :return: image with Poisson noise.
@@ -70,7 +73,7 @@ def add_poisson_noise(image, Ndark):
 
     """
     dark = Ndark * np.ones(image.shape)
-    return np.random.poisson(dark+image)
+    return np.random.poisson(dark + image * QE)
 
 def convert16bits(image):
     """
