@@ -46,4 +46,5 @@ Ready-to-use script for GLINT Mark II.
 The GLINT instrument with directional coupler, 4T mask and C-Red2 has been implemented and ready to use.
 
 ## Next step
-1. Implementing the fringe tracking capability
+1. Longer exposure time than the timeline unit (e.g. to simulate fringe blurring)
+2. Implementing the fringe tracking capability
