@@ -232,7 +232,7 @@ def hex_grid_coords(nr, radius, rot):
     cond = np.abs(ii + jj) <= nr
     return RR.dot(np.array((xx[cond], yy[cond])))
 
-def make_mask_aperture(pupil_grid, segments, num_rings, hex_rad, rot, subpup_diam):
+def make_mask_aperture(pupil_grid, segments, num_rings, hex_rad, subpup_diam):
     """
     Create an aperture mask to put on GLINT's segmented mirror.
 
@@ -245,8 +245,6 @@ def make_mask_aperture(pupil_grid, segments, num_rings, hex_rad, rot, subpup_dia
     :param hex_rad: radius of the hexagonal segment
         (center-to-flat+gap between segments), in same unit as ``pupil_grid''
     :type hex_rad: float
-    :param rot: rotation angle of the hex grid, in degrees
-    :type rot: float
     :param subpup_diam: diameter of the sub-aperture, in same unit as ``pupil_grid''
     :type subpup_diam: float
     :return: aperture mask, single apertures for injection calculation purposes\
@@ -254,7 +252,6 @@ def make_mask_aperture(pupil_grid, segments, num_rings, hex_rad, rot, subpup_dia
     :rtype: tuple
 
     """
-    # mems_seg_array = hex_grid_coords(num_rings, hex_rad, rot=rot).T
     mems_seg_array = hp.make_hexagonal_grid(hex_rad, 3)
     mems_seg_array = np.array([mems_seg_array.x, mems_seg_array.y]).T 
     mems_seg_array = mems_seg_array[segments]

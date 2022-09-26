@@ -29,6 +29,9 @@ the call of the functions in the main script.
 """
 
 import numpy as np
+from astropy.io import fits
+from astropy.io.fits.verify import VerifyWarning
+import warnings
 from gasp_lib_combiner import *
 from gasp_lib_detector import *
 from gasp_lib_optics import *
@@ -101,5 +104,62 @@ def oversample_wavelength(wl, oversampling_factor):
     
     return oversampled_wl.flatten()
 
+def chunk(count, stop, nb_frames_per_fits, nb_fits, data_list):
+    if (count % nb_frames_per_fits == 0):
+        sub_list = data_list[-nb_frames_per_fits:]
+        return sub_list
+    elif count == stop:
+        sub_list = data_list[-(stop % (nb_fits-1)):]
+        return sub_list
+    else:
+        return None
+        
+    
+    
+def save_in_fits(path, name_file, dataframe, metadata):
+    
+    """
+    Create the full path and check the presence of a file extension.
+    """
+    full_name = path + name_file
+    if not full_name.lower().endswith(('.fits')):
+        full_name = full_name + '.fits'
 
+    """
+    Creation of the header
+    """
+    with warnings.catch_warnings():
+        """
+        Disable display of warning about too long keyword 
+        creating a HIERARCH card.
+        """
+        warnings.simplefilter('ignore', category=VerifyWarning) 
+        hdr = fits.Header()
+        for key, value in metadata.items():
+            hdr[key] = value
+        hdu = fits.PrimaryHDU(dataframe, header=hdr)
+    
+    """
+    Encapsulate in FITS and save the file
+    """
+    hdul = fits.HDUList([hdu])
+    hdul.writeto(full_name, overwrite=True)
+    
 
+def save():
+    pass
+
+if __name__ == '__main__':
+    timeline = np.arange(1, 101)
+    nb_fits = 7
+    nb_frames_per_fits = timeline.size // (nb_fits-1)
+    liste = []
+    out = []
+    count = 1
+    for i in timeline:
+        liste.append(i)
+        temp = chunk(count, timeline.size, nb_frames_per_fits, nb_fits, liste)
+        if not temp is None:
+            out = out + [temp]
+            print(count, count//nb_frames_per_fits)
+        count += 1
