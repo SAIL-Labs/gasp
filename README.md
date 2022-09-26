@@ -17,17 +17,33 @@ Both run script and library are fully documented and commented to understand
 the way of thinking of the developments and how the physics of the instrument
 has been implemented.
 
+## Features
+- Scalable Scexao pupil
+- Dynamic atmospheric turbulence modelled as an infinite layer (powered by HCIPY)
+- Sub-apertures and hexagonal segmented mirror generators and control of these segments in piston, tip and tilt
+- Detector noise model of C-Red 2
+- Fringe scanner
+- Spectral dispersion
+
 ## Requirements
-- numpy
 - astropy
 - h5py
 - hcipy
+- itertools
+- numpy
 - scipy
+- timeit
+
+## Update 2022-09-22
+Tricoupler implemented with preset models and ability to create customized models. The presets models are 'all-in-all' (each beam interfere with all the others pair-wise) and 'pairwise' (create fixed pairs of beams, the number of baselines is half the number of apertures).
+Can generate any number of apertures.
+
+Saving system of the data.
+
+Ready-to-use script for GLINT Mark II.
 
 ## Update 2022-03-29
 The GLINT instrument with directional coupler, 4T mask and C-Red2 has been implemented and ready to use.
 
 ## Next step
-1. Implementing a saving system of the data as for real observation data
-2. Implementing the tricoupler
-3. Implementing the fringe tracking capability
+1. Implementing the fringe tracking capability
