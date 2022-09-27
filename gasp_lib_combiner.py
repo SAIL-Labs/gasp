@@ -469,7 +469,7 @@ def create_chip_all_in_all(couplers, nb_apertures, photometric_taps):
     """
     splitters = np.zeros((nb_apertures*(nb_apertures-1)+nb_apertures, nb_apertures, couplers.shape[1]))
     
-    pairs = np.array([elt for elt in combinations(range(4), 2)]) # list the pairs of beams
+    pairs = np.array([elt for elt in combinations(range(nb_apertures), 2)]) # list the pairs of beams
     permutations = np.hstack((pairs, pairs[:,::-1]))
     permutations = permutations.reshape((-1, 2)) # list the inputs of every pairs (beam 1 going to combiner A, beam 2 too, beam 1 going to combiner 2, beam 3 too, etc.)
     
