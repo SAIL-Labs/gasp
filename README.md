@@ -18,8 +18,8 @@ the way of thinking of the developments and how the physics of the instrument
 has been implemented.
 
 ## Features
-- Scalable Scexao pupil
-- Dynamic atmospheric turbulence modelled as an infinite layer (powered by HCIPY)
+- Vectorized Scexao pupil
+- Dynamic atmospheric turbulence modelled as an infinite layer (powered by HCIPY), *no AO correction yet*
 - Sub-apertures and hexagonal segmented mirror generators and control of these segments in piston, tip and tilt
 - Detector noise model of C-Red 2
 - Fringe scanner
@@ -34,6 +34,12 @@ has been implemented.
 - scipy
 - timeit
 
+## Update 2022-09-27
+- Longer exposure time than the timeline unit (e.g. to simulate fringe blurring)
+- Correction of bug in the shifting of the phase screen
+- Use of different kinds of couplers
+- **Ready-to-use script for GLINT Mark II**
+
 ## Update 2022-09-22
 Tricoupler implemented with preset models and ability to create customized models. The presets models are 'all-in-all' (each beam interfere with all the others pair-wise) and 'pairwise' (create fixed pairs of beams, the number of baselines is half the number of apertures).
 Can generate any number of apertures.
@@ -46,5 +52,5 @@ Ready-to-use script for GLINT Mark II.
 The GLINT instrument with directional coupler, 4T mask and C-Red2 has been implemented and ready to use.
 
 ## Next step
-1. Longer exposure time than the timeline unit (e.g. to simulate fringe blurring)
+1. Implementing effects of AO correction
 2. Implementing the fringe tracking capability
