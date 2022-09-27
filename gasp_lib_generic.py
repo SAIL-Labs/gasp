@@ -104,17 +104,25 @@ def oversample_wavelength(wl, oversampling_factor):
     
     return oversampled_wl.flatten()
 
-def chunk(count, stop, nb_frames_per_fits, nb_fits, data_list):
+# def chunk(count, stop, nb_frames_per_fits, nb_fits, data_list):
+#     if (count % nb_frames_per_fits == 0):
+#         sub_list = data_list[-nb_frames_per_fits:]
+#         return sub_list
+#     elif count == stop:
+#         sub_list = data_list[-(stop % (nb_fits-1)):]
+#         return sub_list
+#     else:
+#         return None
+        
+def chunk(count, stop, nb_frames_per_fits, data_list):
     if (count % nb_frames_per_fits == 0):
         sub_list = data_list[-nb_frames_per_fits:]
         return sub_list
     elif count == stop:
-        sub_list = data_list[-(stop % (nb_fits-1)):]
+        sub_list = data_list[-(stop % nb_frames_per_fits):]
         return sub_list
     else:
-        return None
-        
-    
+        return None    
     
 def save_in_fits(path, name_file, dataframe, metadata):
     
@@ -144,21 +152,18 @@ def save_in_fits(path, name_file, dataframe, metadata):
     """
     hdul = fits.HDUList([hdu])
     hdul.writeto(full_name, overwrite=True)
-    
 
-def save():
-    pass
 
 if __name__ == '__main__':
-    timeline = np.arange(1, 101)
-    nb_fits = 7
-    nb_frames_per_fits = timeline.size // (nb_fits-1)
+    timeline = np.arange(0, 10)
+    nb_frames_per_fits = 11#int(np.around(timeline.size / (nb_fits)))
+    nb_fits = int(np.around(timeline.size / nb_frames_per_fits))
     liste = []
     out = []
     count = 1
     for i in timeline:
         liste.append(i)
-        temp = chunk(count, timeline.size, nb_frames_per_fits, nb_fits, liste)
+        temp = chunk(count, timeline.size, nb_frames_per_fits, liste)
         if not temp is None:
             out = out + [temp]
             print(count, count//nb_frames_per_fits)

@@ -16,7 +16,10 @@ This script is dedicated to parametrize and run the simulation.
 The simulation relies on an isotropic and homogeneous grids: all directions have
 the same extent and same step size, for a given grid.
 
-Note of the mode field diameter (MFD): 
+**Note about GLINT Mark II's chip:**
+The internal OPD mismatches are not reproduce.
+
+**Note of the mode field diameter (MFD): **
 the values are taken from lab measurements of the
 4T GLINT chip.
 By using the method moments of moments, we have:
@@ -25,10 +28,17 @@ By using model fitting of a 2D gaussian curve, we have:
 mfd_xy = (5.24e-6, 4.75e-6) metre.
 The mode fields of the chip have larger tail than the Gaussian.
 
-Note about the mode field:
+**Note about the mode field:**
 it is the same for all the waveguides.
 
-Note about the injection of wavefront:
+**Note about the wavefront:**
+the simulator does not simulate wavefronts corrected by AO, yet.
+If someones knows how to do it with HCIpy without simulating the whole AO loop,
+please message me.
+For now, partial correction can be simulated by changing the parameters
+of the turbulence.
+
+**Note about the injection of wavefront:**
 the injection of the projected phase on the mode field of the waveguide
 are defined by the overlap integral.
 
@@ -62,7 +72,7 @@ activate_flux = True
 # To simulate photon noise
 activate_photon_noise = True
 # To activate turbulence
-activate_turbulence = True
+activate_turbulence = False
 
 """
 Photonics chromatism activations
@@ -84,7 +94,9 @@ Operating mode of the nuller activations
 # Do a scan of the fringes
 activate_fringe_scan = False
 # Active beams
-active_beams = [False, True, False, False]
+active_beams = [True, True, True, True]
+# Set the number of points
+nb_points_scans = 50
 # Set the range of the fringe scan, in metre
 opd_min = -3e-6
 opd_max = 3e-6
@@ -97,11 +109,11 @@ activate_glint_markII_combiner = True
 Saving data under fits files and memory management
 """
 # Save data and monitoring in FITS files
-save = True
+save = False
 save_path = 'data/'
 fits_name = 'datacube_'
-# Number of fits files containing the pictures
-nb_fits = 1
+# Number of frames per fits file
+nb_frames_per_fits = 5
 # Purge the list of monitoring (signals, injections, phases...) after each creation of FITS file
 activate_refresh_monitors = False
 
@@ -155,7 +167,7 @@ We assume the sub-apertures are set on a hexagonal pavement
 holes_id = [28, 22, 31, 33] # ID of the hexagon coordinates on which the apertures are, the order correspond to the numbering of the beams (B1, B2...).
 mirror_pistons = [wavel/8, 0, wavel/8, 0]
 # mirror_pistons = np.random.uniform(-wavel, wavel, 4)
-mirror_pistons = [0., 0., 0., 0.]
+# mirror_pistons = [0., 0., 0., 0.]
 
 # =============================================================================
 # Atmo parameters
@@ -165,22 +177,17 @@ r0 = 0.16
 ll = tdiam * oversz  # Physical extension of the wavefront (in meter)
 # Outer scale for the model of turbulence, keep it close to infinity for Kolmogorov turbulence (the simplest form) (in meter)
 L0 = 25.5 # outer scale, in metre
-wind_speed = 9.8  # speed of the wind (in m/s)
+wind_speed = 9.8*4  # speed of the wind (in m/s)
 wind_angle = 45  # Direction of the wind (in degree)
 
 # =============================================================================
 # Acquisition and detector parameters
 # =============================================================================
-fps = 2000  # frame rate (in Hz)
+fps = 200  # frame rate (in Hz)
 delay = 0.001  # delay of the servo loop (in second)
 # Detector Integration Time, time during which the detector collects photon (in second)
-dit = 1 / fps
 timestep = 1e-3  # time step of the simulation (in second)
 time_obs = 0.005  # duration of observation (in second)
-
-# Let's define the axe of time on which any event will happened (turbulence, frame reading, servo loop)
-timeline = np.around(np.arange(0, time_obs, timestep,
-                               dtype=np.float32), int(-np.log10(timestep)))
 
 # Detector is CRED-1
 # read_noise = 0.7  # Read noise of the detector (in e-)
@@ -249,20 +256,18 @@ chromatic_mfd_xy_path = '/mnt/96980F95980F72D3/glint/gasp/ressources/chromatic_m
 # =============================================================================
 # Combiner properties
 # =============================================================================
-nb_apertures = 4
+nb_apertures = len(holes_id)
 photometric_taps = True
-waveguide_combination = 'all-in-all' # or 'pair-wise', see doc
+waveguide_combination = 'pair-wise' # 'all-in-all' or 'pair-wise', see doc
 nb_baselines = nb_apertures // 2
+# waveguide_combination = 'all-in-all' # 'all-in-all' or 'pair-wise', see doc
+# nb_baselines = nb_apertures * (nb_apertures - 1) // 2
 
 # =============================================================================
 # Scan fringes
 # =============================================================================
 beam_to_scan = 0
-scan_range = np.linspace(opd_min, opd_max, 25)
-
-if activate_fringe_scan:
-    magnitude = -6
-    timeline = np.arange(0, scan_range.size)
+scan_range = np.linspace(opd_min, opd_max, nb_points_scans)
 
 # =============================================================================
 # Misc
@@ -279,79 +284,52 @@ count_dit = 1
 debug = []
 
 # =============================================================================
-# Run - no change beyond this point
+# Simulation starts here - no change beyond this point
 # =============================================================================
+start = timer()
 
-# To store in the dataframes files
-metadata = {'aflux': (activate_flux, 'Use of real intensities.'),
-            'aturb': (activate_turbulence, 'Use of atm turbulence.'),
-            'achmodfi': (activate_chromatic_mode_field, 'Use of chromatic mode field for waveguides.'),
-            'adetnois': (activate_detector_noise, 'Use of detector noise.'),
-            'adigitis': (activate_digitise, 'Digitize signal.'),
-            'aphonois': (activate_photon_noise, 'Use of photon noise.'),
-            'abeams': (', '.join(str(e) for e in active_beams), 'Opened beams.'),
-            'aglint': (activate_glint_markII_combiner, 'Use of GLINT II combiner.'),
-            'aglintla': (activate_glint_markII_layout, 'Use of GLINT II detectoir layout.'),
-            'bandwdth': (bandwidth, 'Band width in metre.'),
-            'memsmla': (compr_mems_to_mla, 'Compression factor between MEMS and MLA.'),
-            'pupmems': (compr_pup_to_mems, 'Compression factor between pupil and MEMS.'),
-            'dwl': (dwl, 'Width of a spectral channel.'),
-            'fps': (fps, 'Frames per second.'),
-            'gainsys': (gainsys, 'Detector conversion gain.'),
-            'gap_size': (gap_size, 'MEMS gap size.'),
-            'holes_id': (', '.join(str(e) for e in holes_id), 'ID of hex mirrors.'),
-            'L0': (L0, 'Outer sacle in metre.'),
-            'mag': (magnitude, ' Star magnitude.'),
-            'mfd_xy': (', '.join(str(e) for e in mfd_xy), 'Mode field wvg position at 1.5 um, in metre.'),
-            'ulensdia': (microlens_diameter, 'microlens diameter, in metre.'),
-            'ulensfl': (microlens_focal_length, 'microlens focal length, in metre.'),
-            'pistons': (', '.join(str(e) for e in mirror_pistons), 'initial piston position of hex mirrors.'),
-            'modfiang': (mode_field_theta, 'Mode field wvg angle at 1.5 um, in degree.'),
-            'ndark': (ndark, 'Dark current in e-/px/s.'),
-            'num_ring': (num_rings, 'Number of rings on the hex segmented mirror.'),
-            'offset': (offset, 'detector read-out offset.'),
-            'over_wl': (oversampling_wl, 'factor of oversampling the spectral bandwidth.'),
-            'oversz': (oversz, 'Oversampling the array of the telescope.'),
-            'psz': (psz, 'Size in pixels of the pupil of the telescope.'),
-            'pup_rot': (pup_rot, 'Angle of the Subaru pupil wrt MEMS, in degree.'),
-            'QE': (QE, 'Quantum efficiency of the detector.'),
-            'r0': (r0, 'Fried parameter.'),
-            'ron': (read_noise, 'read-out noise.'),
-            'seed':(seed, 'RNG seed.'),
-            'flatflat': (segment_flat_to_flat, 'twice the apothem, in metre.'),
-            'subdiam': (subpup_diam, 'diameter of sub-apertures, in metre.'),
-            'tdiam': (tdiam, 'telescope diameter, in metre.'),
-            'time_obs': (time_obs, 'Total observation time, in second.'),
-            'timestep': (timestep, 'Time discretization of the simulation.'),
-            'wavecal': (os.path.basename(wavecal_file), 'File used for wavelength calibration.'),
-            'wavel': (wavel, 'Central wavelength of the bandwidth, in metre.'),
-            'wavel_r0': (wavel_r0, 'Wavelength of the Fried parameter.'),
-            'windangl': (wind_angle, 'Angle of the wind, in degree.'),
-            'windfast': (wind_speed, 'Speed of the wind in m/s.')
-            }
+"""
+Set the backbone of the simulation, the timeline. Every event relies on it
+to be triggered.
+"""
+# Let's define the axe of time on which any event will happened (turbulence, frame reading, servo loop)
+timeline = np.around(np.arange(0, time_obs, timestep,
+                               dtype=np.float32), int(-np.log10(timestep)))
 
-if activate_chromatic_mode_field:
-    metadata['chmfdpth'] = (os.path.basename(chromatic_mfd_xy_path), 'To create chromatic mode fields for wvg.')
-    
-if activate_glint_markII_combiner:
-    metadata['zetapath'] = (os.path.basename(zeta_path), 'Zeta coeff to create GLINT combiner.')
-else:
-    metadata['nb_aper'] = (nb_apertures, 'Number of sub-apertures.'),
-    metadata['photometric_taps'] = (photometric_taps, 'Use of photometric taps.'),
-    metadata['wvgconf'] = (waveguide_combination, 'Kind of combination configuration.')
+nb_frames_total = int(np.around(fps * time_obs))
+dit = 1 / fps
 
-# =============================================================================
-# Fool-proof
-# =============================================================================
+"""
+Fool-proof
+"""
 mirror_pistons = np.array(mirror_pistons)
 active_beams = np.array(active_beams)
 mode_field_theta = np.radians(mode_field_theta)
 
-# =============================================================================
-# Simulation starts here
-# =============================================================================
-start = timer()
+if dit < timestep:
+    print('WARNING: DIT lower than time step, expect to break physics')
+    
+if nb_apertures != len(holes_id):
+    print('WARNING: Number of apertures different from number of specified segments')
 
+if len(holes_id) != len(active_beams):
+    print('WARNING: length of ``active_beams`` different from length of ``holes_id``')
+
+if len(mirror_pistons) != len(holes_id):
+    print('WARNING: length of ``mirror_pistons`` different from length of ``holes_id``')
+    
+"""
+Change parameter in case of fringe scanning
+"""
+if activate_fringe_scan:
+    magnitude = -6
+    timeline = np.around(np.arange(0, scan_range.size) * timestep, 
+                         int(-np.log10(timestep)))
+    dit = timestep
+    fps = 1 / dit
+    
+
+timeline_frames = timeline[::int(np.around(dit / timestep))] # Timeline when frames are registered
 """
 Various parameters
 """
@@ -502,6 +480,64 @@ pupil_mode_field, pupil_mode_field_freq, pupil_mode_field_dfreq = \
     lib.sft(mode_field, pupil_range_size, mode_field.shape[1], psz, rad, True)
 pupil_mode_field = pupil_mode_field.reshape(pupil_mode_field.shape[0], -1)
 
+# To store in the dataframes files
+metadata = {'aflux': (activate_flux, 'Use of real intensities.'),
+            'aturb': (activate_turbulence, 'Use of atm turbulence.'),
+            'achmodfi': (activate_chromatic_mode_field, 'Use of chromatic mode field for waveguides.'),
+            'adetnois': (activate_detector_noise, 'Use of detector noise.'),
+            'adigitis': (activate_digitise, 'Digitize signal.'),
+            'aphonois': (activate_photon_noise, 'Use of photon noise.'),
+            'abeams': (', '.join(str(e) for e in active_beams), 'Opened beams.'),
+            'aglint': (activate_glint_markII_combiner, 'Use of GLINT II combiner.'),
+            'aglintla': (activate_glint_markII_layout, 'Use of GLINT II detectoir layout.'),
+            'bandwdth': (bandwidth, 'Band width in metre.'),
+            'memsmla': (compr_mems_to_mla, 'Compression factor between MEMS and MLA.'),
+            'pupmems': (compr_pup_to_mems, 'Compression factor between pupil and MEMS.'),
+            'dwl': (dwl, 'Width of a spectral channel.'),
+            'fps': (fps, 'Frames per second.'),
+            'gainsys': (gainsys, 'Detector conversion gain.'),
+            'gap_size': (gap_size, 'MEMS gap size.'),
+            'holes_id': (', '.join(str(e) for e in holes_id), 'ID of hex mirrors.'),
+            'L0': (L0, 'Outer sacle in metre.'),
+            'mag': (magnitude, ' Star magnitude.'),
+            'mfd_xy': (', '.join(str(e) for e in mfd_xy), 'Mode field wvg position at 1.5 um, in metre.'),
+            'ulensdia': (microlens_diameter, 'microlens diameter, in metre.'),
+            'ulensfl': (microlens_focal_length, 'microlens focal length, in metre.'),
+            'pistons': (', '.join(str(e) for e in mirror_pistons), 'initial piston position of hex mirrors.'),
+            'modfiang': (mode_field_theta, 'Mode field wvg angle at 1.5 um, in degree.'),
+            'ndark': (ndark, 'Dark current in e-/px/s.'),
+            'num_ring': (num_rings, 'Number of rings on the hex segmented mirror.'),
+            'offset': (offset, 'detector read-out offset.'),
+            'over_wl': (oversampling_wl, 'factor of oversampling the spectral bandwidth.'),
+            'oversz': (oversz, 'Oversampling the array of the telescope.'),
+            'psz': (psz, 'Size in pixels of the pupil of the telescope.'),
+            'pup_rot': (pup_rot, 'Angle of the Subaru pupil wrt MEMS, in degree.'),
+            'QE': (QE, 'Quantum efficiency of the detector.'),
+            'r0': (r0, 'Fried parameter.'),
+            'ron': (read_noise, 'read-out noise.'),
+            'seed':(seed, 'RNG seed.'),
+            'flatflat': (segment_flat_to_flat, 'twice the apothem, in metre.'),
+            'subdiam': (subpup_diam, 'diameter of sub-apertures, in metre.'),
+            'tdiam': (tdiam, 'telescope diameter, in metre.'),
+            'time_obs': (time_obs, 'Total observation time, in second.'),
+            'timestep': (timestep, 'Time discretization of the simulation.'),
+            'wavecal': (os.path.basename(wavecal_file), 'File used for wavelength calibration.'),
+            'wavel': (wavel, 'Central wavelength of the bandwidth, in metre.'),
+            'wavel_r0': (wavel_r0, 'Wavelength of the Fried parameter.'),
+            'windangl': (wind_angle, 'Angle of the wind, in degree.'),
+            'windfast': (wind_speed, 'Speed of the wind in m/s.')
+            }
+
+if activate_chromatic_mode_field:
+    metadata['chmfdpth'] = (os.path.basename(chromatic_mfd_xy_path), 'To create chromatic mode fields for wvg.')
+    
+if activate_glint_markII_combiner:
+    metadata['zetapath'] = (os.path.basename(zeta_path), 'Zeta coeff to create GLINT combiner.')
+else:
+    metadata['nb_aper'] = (nb_apertures, 'Number of sub-apertures.'),
+    metadata['photometric_taps'] = (photometric_taps, 'Use of photometric taps.'),
+    metadata['wvgconf'] = (waveguide_combination, 'Kind of combination configuration.')
+
 """
 Initialise storage lists
 """
@@ -512,35 +548,25 @@ monitor_injections = []
 monitor_i_out = []
 shifts = []
 
-
-i_out = np.zeros((5, wl.size))
-i_out_noft = np.zeros((5, wl.size))
-i_out_bi = np.zeros((5, wl.size))
-
-t_old = timeline[0]
-
-# Number of frames per fits
-try:
-    nb_frames_per_fits = timeline.size // (nb_fits - 1)
-except ZeroDivisionError:
-    nb_frames_per_fits = timeline.size
+# Number of FITS files
+nb_fits = int(np.around(nb_frames_total / nb_frames_per_fits))
 
 count_fits = 1 # Counter use to chunk and save datacube in several fits
+count_fits2 = 1
 fits_id = 1 # To generate name in fits files' names
 
 print('Start simulation')
 start_timeline = timer()
-for t in timeline[:]:
+for t in timeline:
     print(list(timeline).index(t)+1, '/', len(timeline))
 
     if activate_fringe_scan:
-        mirror_pistons[beam_to_scan] = scan_range[t]
+        mirror_pistons[beam_to_scan] = scan_range[list(timeline).index(t)]
         hsm.set_segment_actuators(holes_id[beam_to_scan], mirror_pistons[beam_to_scan], 0., 0.)
         aperture_surface = aperture * np.exp(1j*2*np.pi/wl[:,None] * 2 * hsm.surface[None,:])
         
     if activate_turbulence:
-        layer.evolve_until(t - t_old) 
-        
+        layer.evolve_until(t)
         """
         Because I just keep the electric_field, hcipy interface
         ``layer(wavefronts, wl)'' or anyother does not work anymore.
@@ -553,7 +579,6 @@ for t in timeline[:]:
     else:
         phase_screen = np.ones((wl.size, pupil_grid.x.size))
 
-    t_old = t
 
     """
     Simulate injection of the N beams in the N waveguides
@@ -615,54 +640,68 @@ for t in timeline[:]:
     a_out = lib.bin_array(a_out, oversampling_wl)
     
     # Get the intensity of the outputs
-    i_out = abs(a_out)**2
-    monitor_i_out.append(i_out)
-    
-    if activate_glint_markII_layout:
-        # Project on the detector
-        col_start = [int(np.around(np.poly1d(elt)(wl0.max()*1e9))) for elt in wavecal_coeff]
-        det_img, tracks = lib.create_image(344, 96, [col_start[0]], channel_positions, track_width, i_out.T[:,::-1])
-        data.append(det_img)
-    else:
-        det_img = i_out
-
-    noisy_img = lib.add_noise(det_img, QE, ndark*dit, gainsys, offset, read_noise,\
-                          activate_photon_noise, activate_detector_noise,\
-                              activate_digitise)
-    noisy_data.append(noisy_img)
-    
-    if save:
-        """
-        We save the data in FITS: noisy, noise_free and just the intensities.
-        The two last are the same if GLINT mark II's detector layout is not used.
-        """
-        fits_data = lib.chunk(count_fits, timeline.size, nb_frames_per_fits, \
-                              nb_fits, noisy_data)
-            
-        fits_iout = lib.chunk(count_fits, timeline.size, nb_frames_per_fits, \
-                              nb_fits, monitor_i_out)
-
-        fits_injections = lib.chunk(count_fits, timeline.size, nb_frames_per_fits, \
-                              nb_fits, monitor_injections)
-
-        fits_phases = lib.chunk(count_fits, timeline.size, nb_frames_per_fits, \
-                              nb_fits, monitor_phases)
-
-        if not fits_data is None:
-            fits_name2 = fits_name + '%03d.fits'%fits_id
-            lib.save_in_fits(save_path, fits_name2, fits_data, metadata)
-            lib.save_in_fits(save_path, 'i_out_' + '%03d.fits'%fits_id, fits_iout, metadata)
-            lib.save_in_fits(save_path, 'injections_'+ '%03d.fits'%fits_id, fits_injections, metadata)
-            lib.save_in_fits(save_path, 'phases_'+ '%03d.fits'%fits_id, fits_phases, metadata)
-            fits_id += 1
-    
-        count_fits +=1
+    try:
+        i_out += abs(a_out)**2
+    except NameError:
+        i_out = abs(a_out)**2
         
-        if activate_refresh_monitors:
-            noisy_data = []
-            monitor_i_out = []
-            monitor_injections = []
-            monitor_phases = []
+    if count_dit < dit/timestep:
+        count_dit += 1
+    else:
+        i_out /= count_dit
+        monitor_i_out.append(i_out)
+        if activate_glint_markII_layout:
+            # Project on the detector
+            col_start = [int(np.around(np.poly1d(elt)(wl0.max()*1e9))) for elt in wavecal_coeff]
+            det_img, tracks = lib.create_image(344, 96, [col_start[0]], channel_positions, track_width, i_out.T[:,::-1])
+        else:
+            det_img = i_out        
+        data.append(det_img)
+
+        noisy_img = lib.add_noise(det_img, QE, ndark*dit, gainsys, offset, read_noise,\
+                              activate_photon_noise, activate_detector_noise,\
+                                  activate_digitise)
+        noisy_data.append(noisy_img)
+        
+        count_dit = 1 # Re-init the counter
+        i_out = np.zeros_like(i_out)
+        
+        if save:
+            """
+            We save the data in FITS: noisy, noise_free and just the intensities.
+            The two last are the same if GLINT mark II's detector layout is not used.
+            """
+            fits_data = lib.chunk(count_fits, nb_frames_total, nb_frames_per_fits, \
+                                  noisy_data)
+                
+            fits_iout = lib.chunk(count_fits, nb_frames_total, nb_frames_per_fits, \
+                                  monitor_i_out)
+    
+            fits_injections = lib.chunk(count_fits2, timeline.size, 
+                                        nb_frames_per_fits * int(np.around(dit / timestep)), \
+                                  monitor_injections)
+    
+            fits_phases = lib.chunk(count_fits2, timeline.size, 
+                                    nb_frames_per_fits * int(np.around(dit / timestep)), \
+                                  monitor_phases)
+    
+            if not fits_data is None:
+                fits_name2 = fits_name + '%03d.fits'%fits_id
+                lib.save_in_fits(save_path, fits_name2, fits_data, metadata)
+                lib.save_in_fits(save_path, 'i_out_' + '%03d.fits'%fits_id, fits_iout, metadata)
+                lib.save_in_fits(save_path, 'injections_'+ '%03d.fits'%fits_id, fits_injections, metadata)
+                lib.save_in_fits(save_path, 'phases_'+ '%03d.fits'%fits_id, fits_phases, metadata)
+                fits_id += 1
+        
+            count_fits +=1
+            
+            if activate_refresh_monitors:
+                noisy_data = []
+                monitor_i_out = []
+                monitor_injections = []
+                monitor_phases = []
+                
+    count_fits2 += 1
     
 
 stop_timeline = timer()
@@ -692,14 +731,23 @@ plt.figure()
 count = 0
 for k in range(6):
     plt.subplot(3, 2, k+1)
-    plt.plot(timeline, monitor_i_out.mean(1)[:,count])
-    plt.plot(timeline, monitor_i_out.mean(1)[:,count + 1])
+    plt.plot(timeline_frames, monitor_i_out.mean(1)[:,count])
+    plt.plot(timeline_frames, monitor_i_out.mean(1)[:,count + 1])
     plt.grid()
     plt.xlabel('Time (s)')
     plt.ylabel('Intensity (count)')
     plt.title(null_labels[k])
     count += 2
 
+if activate_glint_markII_layout:
+    labels = ['N1', 'AN1', 'N5', 'AN5', 'N3', 'AN3', 'N2', 'AN2', 'N6', 'AN6', 'N4', 'AN4', 'P1', 'P2', 'P3', 'P4']
+    plt.figure()
+    plt.imshow(data[0])
+    for k in range(len(labels)):
+        plt.text(5, channel_positions[k], labels[k], c='y')
+    plt.colorbar()
+    plt.title('Noiseless frame')
+    
 if activate_fringe_scan:
     plt.figure()
     count = 0
